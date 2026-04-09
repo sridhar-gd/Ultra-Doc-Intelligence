@@ -7,7 +7,13 @@ from typing import Optional, Type
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
-from pydantic_ai.ext.langchain import tool_from_langchain
+try:
+    from pydantic_ai.ext.langchain import tool_from_langchain
+except ImportError:
+    # pydantic_ai ext module is optional in some runtime builds.
+    # Fallback keeps app startup working by passing through the original tool.
+    def tool_from_langchain(tool):
+        return tool
 
 from db.vector_store import (
     insert_document,
