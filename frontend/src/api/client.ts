@@ -52,7 +52,7 @@ export async function fetchHealth(): Promise<HealthResponse> {
 export async function uploadDocuments(files: File[]): Promise<BatchUploadResponse> {
   const fd = new FormData();
   for (const file of files) fd.append("files", file);
-  const res = await fetch(`${getApiBase()}/upload`, {
+  const res = await fetch(`${getApiBase()}/upload/`, {
     method: "POST",
     body: fd,
   });
