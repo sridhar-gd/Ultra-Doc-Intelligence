@@ -8,6 +8,14 @@ import type {
 } from "../types/api";
 
 const defaultBase = "http://127.0.0.1:8000";
+const API_PATHS = {
+  health: "/health",
+  upload: "/upload/",
+  ask: "/ask/",
+  extract: "/extract/",
+  extractBatch: "/extract/batch/",
+  ingestionStatus: "/ingestion-status/",
+} as const;
 
 export function getApiBase(): string {
   const raw = import.meta.env.VITE_API_URL;
@@ -41,7 +49,7 @@ function errorMessage(status: number, body: unknown): string {
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${getApiBase()}/health/`);
+  const res = await fetch(`${getApiBase()}${API_PATHS.health}`);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(errorMessage(res.status, body));
@@ -52,7 +60,7 @@ export async function fetchHealth(): Promise<HealthResponse> {
 export async function uploadDocuments(files: File[]): Promise<BatchUploadResponse> {
   const fd = new FormData();
   for (const file of files) fd.append("files", file);
-  const res = await fetch(`${getApiBase()}/upload/`, {
+  const res = await fetch(`${getApiBase()}${API_PATHS.upload}`, {
     method: "POST",
     body: fd,
   });
@@ -71,7 +79,7 @@ export type AskPayload = {
 };
 
 export async function askQuestion(payload: AskPayload): Promise<AskResponse> {
-  const res = await fetch(`${getApiBase()}/ask`, {
+  const res = await fetch(`${getApiBase()}${API_PATHS.ask}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -93,7 +101,7 @@ export type ExtractPayload = {
 };
 
 export async function extractShipment(payload: ExtractPayload): Promise<unknown> {
-  const res = await fetch(`${getApiBase()}/extract/`, {
+  const res = await fetch(`${getApiBase()}${API_PATHS.extract}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -106,7 +114,7 @@ export async function extractShipment(payload: ExtractPayload): Promise<unknown>
 }
 
 export async function extractBatch(batchId: string): Promise<BatchExtractionResponse> {
-  const res = await fetch(`${getApiBase()}/extract/batch?batch_id=${encodeURIComponent(batchId)}`, {
+  const res = await fetch(`${getApiBase()}${API_PATHS.extractBatch}?batch_id=${encodeURIComponent(batchId)}`, {
     method: "POST",
   });
   const body = await res.json().catch(() => null);
@@ -115,14 +123,14 @@ export async function extractBatch(batchId: string): Promise<BatchExtractionResp
 }
 
 export async function fetchJobStatus(jobId: string): Promise<JobStatusResponse> {
-  const res = await fetch(`${getApiBase()}/ingestion-status/${encodeURIComponent(jobId)}`);
+  const res = await fetch(`${getApiBase()}${API_PATHS.ingestionStatus}/${encodeURIComponent(jobId)}`);
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(errorMessage(res.status, body));
   return body as JobStatusResponse;
 }
 
 export async function fetchBatchStatus(batchId: string): Promise<BatchStatusResponse> {
-  const res = await fetch(`${getApiBase()}/ingestion-status/batch/${encodeURIComponent(batchId)}`);
+  const res = await fetch(`${getApiBase()}${API_PATHS.ingestionStatus}/batch/${encodeURIComponent(batchId)}`);
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(errorMessage(res.status, body));
   return body as BatchStatusResponse;
