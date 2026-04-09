@@ -164,6 +164,13 @@ class Settings(BaseSettings):
         default=False,
         description="Enable FastAPI debug mode (never True in production)",
     )
+    warmup_models_on_startup: bool = Field(
+        default=False,
+        description=(
+            "If True, eagerly load embedding/reranker models during app startup. "
+            "Keep False on low-memory hosts (e.g., Railway) to avoid restart loops."
+        ),
+    )
 
     # CORS
     cors_origins: list[str] = Field(
