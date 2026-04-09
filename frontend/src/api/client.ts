@@ -11,10 +11,10 @@ const defaultBase = "http://127.0.0.1:8000";
 const API_PATHS = {
   health: "/health",
   upload: "/upload/",
-  ask: "/ask/",
-  extract: "/extract/",
-  extractBatch: "/extract/batch/",
-  ingestionStatus: "/ingestion-status/",
+  ask: "/ask",
+  extract: "/extract",
+  extractBatch: "/extract/batch",
+  ingestionStatus: "/ingestion-status",
 } as const;
 
 export function getApiBase(): string {
