@@ -9,8 +9,6 @@ from pydantic_ai import Agent
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
-from tools.retrieve_chunks_tool import retrieve_chunks_tool
-from tools.rerank_chunks_tool import rerank_chunks_tool
 from services.embedder import rerank_chunks as cross_encoder_rerank
 from services.guardrails import (
     check_similarity_gate,
@@ -97,13 +95,10 @@ qa_agent = Agent(
         model_name=settings.anthropic_model,
         provider=AnthropicProvider(api_key=settings.anthropic_api_key),
     ),
-    tools=[retrieve_chunks_tool, rerank_chunks_tool],
+    tools=[],
     system_prompt=(
         "You are Ultra Doc-Intelligence, a logistics document Q&A assistant. "
-        "You have two tools: retrieve_chunks and rerank_chunks. "
-        "To answer any question: FIRST call retrieve_chunks with the query and document_id, "
-        "THEN call rerank_chunks with the retrieved chunks if needed, "
-        "THEN answer strictly from the retrieved context. "
+        "Answer questions strictly from provided context chunks. "
         "If no relevant chunks are found, respond: 'Not found in document.' "
         "Never use external knowledge. Always cite the source section."
     ),
