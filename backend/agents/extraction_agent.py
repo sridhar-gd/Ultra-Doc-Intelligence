@@ -9,7 +9,6 @@ from pydantic_ai import Agent
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
 
-from tools.check_document_tool import check_document_tool
 from schemas.shipment_schema import ShipmentData
 from prompts.extraction_system_prompt import (
     EXTRACTION_SYSTEM_PROMPT,
@@ -30,12 +29,11 @@ extraction_agent = Agent(
         provider=AnthropicProvider(api_key=settings.anthropic_api_key),
     ),
     output_type=ShipmentData,
-    tools=[check_document_tool],
+    tools=[],
     system_prompt=(
         "You are a logistics document data extraction engine. "
         "Your task is to extract structured shipment fields from a document. "
-        "Use the check_document tool to retrieve all document chunks, "
-        "then extract every field you can find and return a valid JSON object "
+        "Extract every field you can find and return a valid JSON object "
         "matching the ShipmentData schema. "
         "Set missing fields to null — never fabricate values. "
         "Copy values verbatim from the document. "
