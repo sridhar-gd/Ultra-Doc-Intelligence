@@ -41,7 +41,7 @@ function errorMessage(status: number, body: unknown): string {
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${getApiBase()}/health`);
+  const res = await fetch(`${getApiBase()}/health/`);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(errorMessage(res.status, body));
@@ -93,7 +93,7 @@ export type ExtractPayload = {
 };
 
 export async function extractShipment(payload: ExtractPayload): Promise<unknown> {
-  const res = await fetch(`${getApiBase()}/extract`, {
+  const res = await fetch(`${getApiBase()}/extract/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
