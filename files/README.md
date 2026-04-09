@@ -121,7 +121,7 @@ All values are configurable via environment variables (`.env`) through `config.p
 
 ---
 
-## RAGAS-style confidence implementation (actual code path)
+## RAGAS-style confidence implementation
 
 Confidence is computed in `services/guardrails.py::evaluate_answer()` using three signals:
 
@@ -144,6 +144,137 @@ Thresholds:
 
 - **Similarity gate:** `guardrail_similarity_threshold=0.25`
 - **Low confidence warning:** `guardrail_low_confidence_threshold=0.20`
+
+---
+
+## Architecture
+
+This repository follows a **layered FastAPI backend** with optional React frontend:
+
+
+| Layer         | Responsibility                                     | Key locations                                                                                     |
+| ------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **API**       | HTTP routes, validation, job/batch resolution      | `backend/api/*.py`, `schemas/request_schemas.py`, `schemas/response_schemas.py`                   |
+| **Agents**    | QA, ingestion orchestration, extraction            | `backend/agents/*.py`, `backend/tools/*.py`                                                       |
+| **Services**  | Parsing, chunking, embeddings, retrieval, scoring  | `backend/services/*.py`                                                                           |
+| **Data**      | Supabase client, pgvector RPCs, chunk persistence  | `backend/db/client.py`, `backend/db/vector_store.py`, SQL in `backend/db/init_supabase_schema.py` |
+| **Config**    | Environment-driven settings                        | `backend/config.py`                                                                               |
+| **App entry** | Lifespan, CORS, router registration, logging setup | `backend/main.py`                                                                                 |
+
+
+**Request flow (simplified):** client → FastAPI router → resolve `job_id` / `batch_id` via in-memory registry (`services/ingestion_jobs.py`) → QA or extraction agent → hybrid retrieval against Supabase (`services/retriever.py`) → Anthropic for generation or judging (`agents/qa_agent.py`, `services/guardrails.py`) → `AskResponse` / `ShipmentData` per `schemas/`.
+
+The mermaid diagram in [High-level architecture](#high-level-architecture) shows upload → background ingestion → vector DB → ask/extract.
+
+---
+
+## Chunking strategy
+
+Chunking is implemented in `backend/services/chunker.py`.
+
+1. **Primary path — Docling `HybridChunker`**
+  - Uses tokenizer `BAAI/bge-large-en-v1.5` and `max_tokens=settings.chunk_size` (default 512).  
+  - `merge_peers=True` merges small adjacent chunks in the same section.  
+  - Metadata per chunk: `section_heading`, `page_number` (from Docling provenance when available), `doc_type`, `load_id` from the parsed document.
+2. **Quality gate**
+  - If Docling returns too few chunks (`_MIN_ACCEPTABLE_CHUNKS`, default 3) or any chunk exceeds `_MAX_ACCEPTABLE_TOKENS` (default 1200 estimated tokens), the pipeline **falls back** to LangChain.
+3. **Fallback — `RecursiveCharacterTextSplitter`**
+  - Splits markdown with separators `["\n\n", "\n", ". ", " ", ""]`, using `chunk_size` and `chunk_overlap` from config (scaled in code for character length).  
+  - `section_heading` is inferred via nearest markdown heading before the chunk (`_extract_nearest_heading`).  
+  - `page_number` is not set in fallback mode.
+4. **Downstream**
+  - Chunks are contextualized (`services/contextualizer.py`), embedded (`services/embedder.py`), and stored (`db/vector_store.py`). Search and prompts prefer `contextual_text` when present.
+
+---
+
+## Retrieval method
+
+Hybrid retrieval lives in `backend/services/retriever.py` and uses Supabase RPCs defined in `init_supabase_schema.py`.
+
+1. **Query embedding** — The user question is embedded with OpenAI via `embed_texts()` (`services/embedder.py`).
+2. **Two parallel legs (per document)**
+  - **Semantic:** `match_chunks` RPC — pgvector cosine similarity on stored embeddings.  
+  - **Keyword:** `keyword_search_chunks` RPC — `pg_trgm` similarity on `contextual_text`.
+3. **Fusion** — Results are merged with **Reciprocal Rank Fusion** (`_RRF_K = 60`): each list contributes `1 / (k + rank)` per chunk; combined score sorts a deduplicated candidate set.
+4. **Reranking** — Top candidates (up to `retrieval_top_k_rerank_input`, default 15) are re-scored with the **cross-encoder** (`rerank_chunks` in `embedder.py`). Final context uses `retrieval_top_k_final` (default 3) unless overridden by `top_k` in the Ask API.
+5. **Batch / cross-document** — `agents/qa_agent.py` runs retrieval per ready document, merges candidates, and applies a **global** rerank so scores are comparable across files; chunks carry `document_name` for attribution in `AskResponse`.
+
+---
+
+## Guardrails approach
+
+Guardrails are centered in `backend/services/guardrails.py` and wired through `agents/qa_agent.py` and `api/ask.py`.
+
+1. **Pre-generation relevance gate** — `check_similarity_gate()` runs **before** the main LLM answer. It uses the best available score: **sigmoid(cross-encoder logit)** when `rerank_score` exists, else cosine similarity from pgvector. If the score is below `guardrail_similarity_threshold` (default `0.25`), it raises `GuardrailTriggered` — the API surfaces this as a refusal path (`guardrail_triggered`, empty `chunks_used`, `source_documents: null`).
+2. **Refusal alignment** — `is_refusal()` detects standardized “not in document” style answers so scores and flags stay consistent with user-facing behavior.
+3. **No extra gate on faithfulness** — Faithfulness and claim coverage are evaluated **after** an answer is produced (for scoring and `confidence_score`), unless the similarity gate already stopped the pipeline.
+
+Threshold tuning notes are documented on `Settings.guardrail_similarity_threshold` in `config.py` (lower for form-like logistics PDFs, higher for dense prose).
+
+---
+
+## Confidence scoring method
+
+Confidence is the **composite** from `evaluate_answer()` in `services/guardrails.py` (see also [RAGAS-style confidence implementation](#ragas-style-confidence-implementation-actual-code-path) above).
+
+
+| Signal                              | Meaning in this codebase                                                | How it is computed                                                                                                       |
+| ----------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **Faithfulness**                    | Grounding of the answer in retrieved chunks                             | LLM judge returns `total_claims` / `supported_claims`; ratio = **RAGAS-style faithfulness**                              |
+| `**answer_relevancy`** (API field)  | Responsiveness + concreteness                                           | LLM judge: binary `responsive` and `concrete`; score = mean                                                              |
+| `**context_relevancy`** (API field) | Single-doc: top-chunk retrieval quality; cross-doc: **source coverage** | Single-doc: `sigmoid(rerank_score)` or cosine; cross-doc: fraction of distinct `document_name` in chunks vs expected set |
+
+
+**Weighting:** single-document vs cross-document blends differ (`0.55/0.25/0.20` vs `0.60/0.20/0.20`).  
+**Warning:** `low_confidence_warning` is true when `confidence_score < guardrail_low_confidence_threshold` (default `0.20`).  
+**Edge cases:** empty chunks → zeros; refusals → zero composite with warning; judge JSON parse errors fall back to **0.5** on affected signals (logged).
+
+---
+
+## Failure cases
+
+
+| Symptom                                         | Typical cause                                                            | Where it shows up                                                          |
+| ----------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| **404** on ask/extract                          | Unknown `job_id` or `batch_id`                                           | `api/ask.py`, `api/extract.py`                                             |
+| **422** on ask/extract                          | Job not `ready`, or batch has no ready docs                              | Same                                                                       |
+| **Guardrail / empty context**                   | Retrieval relevance below threshold                                      | `GuardrailTriggered`, `guardrail_triggered=true`                           |
+| **“Not found in document.”**                    | Model refusal or off-topic question                                      | Prompt rules + `is_refusal()`                                              |
+| **Ingestion failed**                            | Parse error, Docling failure, DB error                                   | Job `status=failed`, `error` on status API                                 |
+| **Poor chunking**                               | Docling unusable → fallback splitter; very large chunks trigger fallback | `chunker.py`                                                               |
+| **Confidence looks “stuck” at 0.5** on a signal | LLM judge returned non-JSON or malformed output                          | `guardrails.py` fallback                                                   |
+| **Lost upload state**                           | Server restart                                                           | `ingestion_jobs.py` is **in-memory** only                                  |
+| **Schema / DB mismatch**                        | Old DB without migrations                                                | Run `db/init_supabase_schema.py` (includes legacy column/index migrations) |
+
+
+---
+
+## Improvement ideas
+
+### 1. LangSmith (observability)
+
+Langsmith can trace **each LLM call** (QA, contextualizer, extraction, judge prompts in `guardrails.py`), record **token usage and latency**, and compare runs over time. Integration would wrap Anthropic/OpenAI calls or use LangChain callbacks where applicable, without changing core RAG logic — primarily instrumentation in `agents/*.py`, `services/contextualizer.py`, and `services/guardrails.py`.
+
+### 2. Anthropic structured outputs
+
+Anthropic’s **structured outputs** let the API return data constrained to a supplied schema instead of free text that must be cleaned (e.g. stripping ````json`fences and hoping`json.loads` succeeds).
+
+**In this codebase:** `_compute_faithfulness`, `_compute_claim_coverage`, and extraction flows currently rely on **plain-text JSON** in the message body with manual cleanup. Structured outputs could:
+
+- Return **typed** judge results (`total_claims`, `supported_claims`, `responsive`, `concrete`) with fewer parse failures and **no fence-stripping**.
+- Align extraction even more tightly with `ShipmentData` / Pydantic models, reducing retry loops in PydanticAI.
+
+### 3. Mem0 (long-term memory)
+
+Mem0 is a **memory layer** for LLM apps: it stores and retrieves user- or session-level facts and preferences across conversations.
+
+**Here,** each `/ask` is largely stateless aside from uploaded documents. Mem0 could remember **clarifications** (“when I say ‘the load’, I mean LD53657”), **frequently used filters**, or **broker-specific terminology** — injected as a short memory block into `qa_system_prompt.py` or the user message builder in `qa_agent.py`. Implementation would add a small adapter (API key, user/session IDs from your auth layer) and a **retrieve-then-merge** step before retrieval, being careful **not** to let memory override **grounded** answers from documents (memory as adjunct, not a source of logistics facts unless explicitly allowed).
+
+### 4. Context relevancy (single-document): why it stalls near ~0.89–0.90 — and the best fix
+
+**Is the observation real?** Often yes, and the code explains why. For single-document queries, `context_relevancy` comes from `_compute_context_relevancy()` in `services/guardrails.py`, which uses `_best_relevance_score()` → **`sigmoid(rerank_score)`** when a cross-encoder `rerank_score` (logit) is present. A standard logistic maps moderate logits to the high‑but‑not‑saturated band (the in-file reference curve: logit **+2 → ~0.88**, **+4 → ~0.98**). So scores in the **~0.89–0.91** range frequently mean “strong but not extreme logit,” not necessarily a broken retriever. The same doc block also notes logistics query/chunk pairs rarely produce extremely large logits.
+
+**Single best improvement:** Replace the **standalone** `sigmoid(top_logit)` with a **per-query, candidate-relative score** computed over the **same reranked list** you already have when building context (the chunks passed into `evaluate_answer`, each ideally still carrying `rerank_score`). Concretely: take the rerank logits for those final candidates, apply **softmax across that set**, and set **`context_relevancy` to the softmax weight of the top-ranked chunk**. Optionally multiply by a **bounded** function of the top logit so that when *every* candidate’s logit is poor, the score does not pretend the winner is excellent. This measures **how dominant the winner is versus the other retrieved chunks for this question**, removes the artificial “everything tops out around 0.9 unless the top logit is very large” effect, and stays aligned with the cross-encoder ordering you already use in `services/embedder.py` and `services/retriever.py`.
 
 ---
 
