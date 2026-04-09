@@ -24,9 +24,13 @@ langchain-openai>=0.3.35,<0.4.0
 # OpenAI (For LangChain + embeddings)
 openai>=1.40.0,<3.0.0
 
+# Use CPU-only PyTorch wheels in production builds to avoid huge CUDA image layers.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # Embeddings (Local — HuggingFace)
 sentence-transformers>=3.0.0,<4.0.0
-torch>=2.3.0,<3.0.0
+torch==2.3.1+cpu
+torchvision==0.18.1+cpu
 transformers>=4.42.0,<5.0.0
 huggingface-hub==0.34.4
 
