@@ -35,14 +35,20 @@ async def lifespan(app: FastAPI):
     logger.info(f"Max files per batch     : {settings.max_files_per_batch}")
     logger.info("=" * 60)
 
-    try:
-        logger.info("Warming up embedding and reranker models (one-time load)...")
-        from services.embedder import _get_openai_embedder, _get_cross_encoder
-        _get_openai_embedder()
-        _get_cross_encoder()
-        logger.info("Models warmed up and ready.")
-    except Exception as exc:
-        logger.warning(f"Model warm-up failed (will load on first request): {exc}")
+    if settings.warmup_models_on_startup:
+        try:
+            logger.info("Warming up embedding and reranker models (one-time load)...")
+            from services.embedder import _get_openai_embedder, _get_cross_encoder
+            _get_openai_embedder()
+            _get_cross_encoder()
+            logger.info("Models warmed up and ready.")
+        except Exception as exc:
+            logger.warning(f"Model warm-up failed (will load on first request): {exc}")
+    else:
+        logger.info(
+            "Skipping startup model warm-up "
+            "(set WARMUP_MODELS_ON_STARTUP=true to enable)."
+        )
 
     try:
         from db.client import get_supabase_client
