@@ -9,8 +9,10 @@ from pathlib import Path
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
+from config import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 # Dataclass for parsed output
 
@@ -93,10 +95,15 @@ def _build_converter() -> DocumentConverter:
       - generate_page_images: Disabled (not needed for RAG text extraction)
     """
     pdf_options = PdfPipelineOptions(
-        do_ocr=True,               # Handle scanned PDFs (EasyOCR)
+        do_ocr=settings.parser_pdf_do_ocr,
         do_table_structure=True,   # TableFormer — ~94% table accuracy
         generate_page_images=False,
         generate_picture_images=False,
+    )
+    logger.info(
+        "Docling PDF options: do_ocr=%s do_table_structure=%s",
+        settings.parser_pdf_do_ocr,
+        True,
     )
 
     return DocumentConverter(
