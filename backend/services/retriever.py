@@ -132,13 +132,16 @@ async def hybrid_retrieve(
         return []
 
     # Step 4: Cross-encoder re-ranking
-    if apply_reranking and len(top_candidates) > 1:
+    enable_reranking = apply_reranking and settings.retrieval_enable_reranking
+    if enable_reranking and len(top_candidates) > 1:
         final_chunks = await rerank_chunks(
             query=query,
             chunks=top_candidates,
             top_k=top_k_final,
         )
     else:
+        if apply_reranking and not settings.retrieval_enable_reranking:
+            logger.info("Cross-encoder reranking disabled by config; using RRF-only ranking.")
         final_chunks = top_candidates[:top_k_final]
 
     if final_chunks:
