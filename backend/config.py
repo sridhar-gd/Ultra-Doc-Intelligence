@@ -104,6 +104,13 @@ class Settings(BaseSettings):
         default=3,
         description="Final top-K chunks used in the LLM prompt",
     )
+    retrieval_enable_reranking: bool = Field(
+        default=False,
+        description=(
+            "Enable cross-encoder reranking. Disable on low-memory hosts to avoid "
+            "loading the heavyweight BAAI reranker model at request time."
+        ),
+    )
 
     # Guardrails
     guardrail_similarity_threshold: float = Field(
