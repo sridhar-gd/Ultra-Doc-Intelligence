@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     )
 
     # Anthropic
-    anthropic_api_key: str = Field(..., description="Anthropic API key")
+    anthropic_api_key: str = Field(..., validation_alias="ANTHROPIC_API_KEY", description="Anthropic API key")
 
     anthropic_model: str = Field(
         default="claude-sonnet-4-20250514",
@@ -44,10 +44,10 @@ class Settings(BaseSettings):
     )
 
     # Supabase
-    supabase_url: str = Field(..., description="Supabase project URL")
-    supabase_anon_key: str = Field(..., description="Supabase anon/public key")
+    supabase_url: str = Field(..., , validation_alias="SUPABASE_URL", description="Supabase project URL")
+    supabase_anon_key: str = Field(...,  validation_alias="SUPABASE_ANON_KEY", description="Supabase anon/public key")
     supabase_service_role_key: str = Field(
-        ..., description="Supabase service-role key (bypasses RLS — server-side only)"
+        ...,  validation_alias="SUPABASE_SERVICE_ROLE_KEY", description="Supabase service-role key (bypasses RLS — server-side only)"
     )
 
     database_url: str = Field(
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     )
 
     # OpenAI — used for embeddings only
-    openai_api_key: str = Field(..., description="OpenAI API key (used for embeddings)")
+    openai_api_key: str = Field(...,  validation_alias="OPENAI_API_KEY", description="OpenAI API key (used for embeddings)")
 
     embedding_model_name: str = Field(
         default="text-embedding-3-small",
