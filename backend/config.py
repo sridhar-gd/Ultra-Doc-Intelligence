@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     )
 
     # Supabase
-    supabase_url: str = Field(..., , validation_alias="SUPABASE_URL", description="Supabase project URL")
+    supabase_url: str = Field(..., validation_alias="SUPABASE_URL", description="Supabase project URL")
     supabase_anon_key: str = Field(...,  validation_alias="SUPABASE_ANON_KEY", description="Supabase anon/public key")
     supabase_service_role_key: str = Field(
         ...,  validation_alias="SUPABASE_SERVICE_ROLE_KEY", description="Supabase service-role key (bypasses RLS — server-side only)"
