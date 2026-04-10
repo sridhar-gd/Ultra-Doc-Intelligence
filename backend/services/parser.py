@@ -127,6 +127,51 @@ def get_converter() -> DocumentConverter:
     return _converter
 
 
+def _fallback_pdf_extract(path: Path) -> ParsedDocument:
+    """
+    Fallback PDF text extraction when Docling fails due to native OCR/X11 libs.
+    Uses pypdf (pure Python) so it works in constrained cloud runtimes.
+    """
+    try:
+        from pypdf import PdfReader
+    except Exception as exc:
+        raise RuntimeError(
+            "PDF fallback extractor unavailable (pypdf import failed)."
+        ) from exc
+
+    reader = PdfReader(str(path))
+    texts: list[str] = []
+    for page in reader.pages:
+        texts.append(page.extract_text() or "")
+
+    markdown_text = "\n\n".join(t.strip() for t in texts if t and t.strip())
+    if not markdown_text:
+        raise RuntimeError(
+            "PDF fallback produced empty output. The file may be scanned/image-only."
+        )
+
+    doc_type = _detect_doc_type(markdown_text)
+    load_id = _detect_load_id(markdown_text)
+    page_count = len(reader.pages)
+
+    logger.warning(
+        "Docling unavailable for %s; used pypdf fallback (pages=%d).",
+        path.name,
+        page_count,
+    )
+
+    return ParsedDocument(
+        file_path=str(path),
+        filename=path.name,
+        markdown=markdown_text,
+        detected_doc_type=doc_type,
+        detected_load_id=load_id,
+        page_count=page_count,
+        table_count=0,
+        raw_docling_result=None,
+    )
+
+
 # Core parse function
 
 def _parse_sync(file_path: str) -> ParsedDocument:
@@ -151,6 +196,10 @@ def _parse_sync(file_path: str) -> ParsedDocument:
         result = converter.convert(str(path))
     except Exception as exc:
         logger.error(f"Docling conversion failed for {path.name}: {exc}")
+        # Railway/container environments can miss native XCB libs required by OCR stack.
+        # Fall back to pure-Python extraction for PDFs so ingestion can continue.
+        if ext == "pdf" and "libxcb.so.1" in str(exc):
+            return _fallback_pdf_extract(path)
         raise RuntimeError(f"Document parsing failed: {exc}") from exc
 
     # Export to Markdown — primary text representation for chunking + embedding
