@@ -39,6 +39,7 @@ huggingface-hub==0.34.4
 
 # Document Parsing
 docling>=2.80.0,<3.0.0
+pypdf>=5.0.0,<6.0.0
 
 # Supabase / Database
 supabase>=2.5.0,<3.0.0
