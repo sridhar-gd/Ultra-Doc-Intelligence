@@ -363,11 +363,16 @@ async def run_qa_multi(
             chunks_used=[],
         )
 
-    final_chunks = await cross_encoder_rerank(
-        query=question,
-        chunks=merged_chunks,
-        top_k=min(_MAX_TOTAL_CHUNKS, len(merged_chunks)),
-    )
+    if settings.retrieval_enable_reranking and len(merged_chunks) > 1:
+        final_chunks = await cross_encoder_rerank(
+            query=question,
+            chunks=merged_chunks,
+            top_k=min(_MAX_TOTAL_CHUNKS, len(merged_chunks)),
+        )
+    else:
+        if not settings.retrieval_enable_reranking:
+            logger.info("[QA-multi] Cross-encoder reranking disabled by config; using merged retrieval order.")
+        final_chunks = merged_chunks[: min(_MAX_TOTAL_CHUNKS, len(merged_chunks))]
 
     top_chunk      = final_chunks[0]
     top_similarity = float(top_chunk.get("similarity", 0.0))
